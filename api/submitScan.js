@@ -16,6 +16,16 @@ if (!getApps().length) {
 const db = getFirestore();
 
 module.exports = async (req, res) => {
+  // Allow requests from any origin (needed for browser-based testing)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+
+  // Handle the browser's preflight check
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   if (req.method !== "POST") {
     return res.status(405).send({ error: "Method not allowed" });
   }
