@@ -78,9 +78,8 @@ module.exports = async (req, res) => {
     const studentSnap = await studentRef.get();
 
     if (!studentSnap.exists) {
-      return res.status(404).send({ error: "Student not found for this fingerprint", debug_lookedFor: studentDocId });
+      return res.status(404).send({ error: "Student not found for this fingerprint" });
     }
-
     const regNo = studentSnap.data().regNo;
 
     const sessionRef = db.collection("sessions").doc(sessionId);
