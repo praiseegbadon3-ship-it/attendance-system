@@ -66,6 +66,12 @@ module.exports = async (req, res) => {
     const deviceId = sessionData.deviceId;
     const attendees = sessionData.attendees || {};
 
+    // Fetch the course to get its level, since students are matched
+    // by level (not a per-student enrolledCourses list) — every
+    // student at a level takes every course at that level.
+    const courseSnap = await db.collection("courses").doc(courseId).get();
+    const courseLevel = courseSnap.exists ? courseSnap.data().level : null;
+
     // 1. Close the session
     await sessionRef.update({ status: "closed" });
 
@@ -78,10 +84,9 @@ module.exports = async (req, res) => {
     }
 
     // 3. Update attendance stats for every enrolled student
-    const studentsSnap = await db
-      .collection("students")
-      .where("enrolledCourses", "array-contains", courseId)
-      .get();
+      const studentsSnap = courseLevel
+      ? await db.collection("students").where("level", "==", courseLevel).get()
+      : { forEach: () => {}, size: 0 };
 
     const batch = db.batch();
 
