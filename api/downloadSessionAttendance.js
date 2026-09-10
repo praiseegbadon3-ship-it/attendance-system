@@ -51,7 +51,6 @@ module.exports = async (req, res) => {
     }
     // --- End auth check ---
 
-    // Fetch session
     const sessionRef = db.collection("sessions").doc(sessionId);
     const sessionSnap = await sessionRef.get();
 
@@ -61,7 +60,6 @@ module.exports = async (req, res) => {
 
     const sessionData = sessionSnap.data();
 
-    // Only completed sessions can be downloaded
     if (sessionData.status !== "closed") {
       return res.status(400).send({
         error: "Attendance can only be downloaded for completed sessions",
@@ -72,7 +70,6 @@ module.exports = async (req, res) => {
     const deviceId = sessionData.deviceId;
     const attendees = sessionData.attendees || {};
 
-    // Fetch course information
     let courseCode = "";
     let courseTitle = "";
 
@@ -86,12 +83,7 @@ module.exports = async (req, res) => {
       }
     }
 
-    // Fetch students for this device.
-    // Student document IDs are:
-    // deviceId_fingerprintId
-    //
-    // We use the deviceId from the session to find the
-    // students belonging to this physical attendance device.
+    // Get students belonging to this device
     let studentsByRegNo = {};
 
     if (deviceId) {
@@ -104,30 +96,26 @@ module.exports = async (req, res) => {
         const student = doc.data();
 
         if (student.regNo) {
-          studentsByRegNo[student.regNo] = {
+          studentsByRegNo[String(student.regNo)] = {
             fullName: student.fullName || "",
-            regNo: student.regNo,
+            regNo: String(student.regNo),
           };
         }
       });
     }
 
-    // Prepare CSV rows
     const rows = [];
 
-    // Report information
     rows.push(["Course Code", courseCode]);
     rows.push(["Course Title", courseTitle]);
     rows.push(["Session ID", sessionId]);
     rows.push(["Device ID", deviceId || ""]);
     rows.push([]);
 
-    // CSV header
     rows.push(["Reg No", "Student Name", "Attendance Time"]);
 
-    // Add attendees
     for (const [regNo, attendanceData] of Object.entries(attendees)) {
-      const student = studentsByRegNo[regNo];
+      const student = studentsByRegNo[String(regNo)];
 
       let timestamp = "";
 
@@ -141,19 +129,20 @@ module.exports = async (req, res) => {
         }
       }
 
+      // Prefix the registration number as an Excel text value
+      const excelRegNo = `="${String(regNo).replace(/"/g, '""')}"`;
+
       rows.push([
-        regNo,
+        excelRegNo,
         student ? student.fullName : "Unknown Student",
         timestamp,
       ]);
     }
 
-    // If nobody attended, still produce a valid CSV.
     if (Object.keys(attendees).length === 0) {
       rows.push(["", "No students attended this session", ""]);
     }
 
-    // Escape CSV values safely
     const escapeCsvValue = (value) => {
       if (value === null || value === undefined) {
         return "";
