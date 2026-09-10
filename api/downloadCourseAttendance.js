@@ -65,9 +65,7 @@ module.exports = async (req, res) => {
     const courseTitle = courseData.courseTitle || "";
     const level = courseData.level || "";
 
-    // Get every student at this course's level.
-    // This follows the current project rule that all students
-    // at a level take every course at that level.
+    // All students at this level take this course.
     const studentsSnap = await db
       .collection("students")
       .where("level", "==", level)
@@ -91,11 +89,14 @@ module.exports = async (req, res) => {
       "Attendance Percentage",
     ]);
 
-    // Add every student, including students with no attendance yet.
+    // Add every student, including students with zero attendance.
     studentsSnap.forEach((doc) => {
       const student = doc.data();
 
-      const regNo = student.regNo || "";
+      const regNo = student.regNo
+        ? String(student.regNo)
+        : "";
+
       const fullName = student.fullName || "";
 
       const attendanceStats =
@@ -107,8 +108,11 @@ module.exports = async (req, res) => {
       const total = attendanceStats.total || 0;
       const percentage = attendanceStats.percentage || 0;
 
+      // Force Reg No to remain text in Excel.
+      const excelRegNo = `="${regNo.replace(/"/g, '""')}"`;
+
       rows.push([
-        regNo,
+        excelRegNo,
         fullName,
         present,
         total,
