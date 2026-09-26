@@ -1,10 +1,23 @@
 const crypto = require("crypto");
 
-const { initializeApp, cert, getApps } = require("firebase-admin/app");
-const { getFirestore } = require("firebase-admin/firestore");
-const { getAuth } = require("firebase-admin/auth");
+const {
+  initializeApp,
+  cert,
+  getApps,
+} = require("firebase-admin/app");
 
-// Initialize Firebase Admin only once
+const {
+  getFirestore,
+} = require("firebase-admin/firestore");
+
+const {
+  getAuth,
+} = require("firebase-admin/auth");
+
+// ============================================================
+// FIREBASE ADMIN
+// ============================================================
+
 if (!getApps().length) {
   initializeApp({
     credential: cert({
@@ -17,6 +30,10 @@ if (!getApps().length) {
 
 const db = getFirestore();
 
+// ============================================================
+// HASH DEVICE SECRET
+// ============================================================
+
 function hashSecret(secret) {
   return crypto
     .createHash("sha256")
@@ -24,22 +41,41 @@ function hashSecret(secret) {
     .digest("hex");
 }
 
+// ============================================================
+// SUBMIT SCAN
+// ============================================================
+
 module.exports = async (req, res) => {
+  // ----------------------------------------------------------
   // CORS
-  res.setHeader("Access-Control-Allow-Origin", "*");
+  // ----------------------------------------------------------
+
+  res.setHeader(
+    "Access-Control-Allow-Origin",
+    "*"
+  );
+
   res.setHeader(
     "Access-Control-Allow-Methods",
     "POST, OPTIONS"
   );
+
   res.setHeader(
     "Access-Control-Allow-Headers",
     "Content-Type, Authorization, X-Device-Secret"
   );
 
-  // Handle preflight
+  // ----------------------------------------------------------
+  // PREFLIGHT
+  // ----------------------------------------------------------
+
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
+
+  // ----------------------------------------------------------
+  // METHOD
+  // ----------------------------------------------------------
 
   if (req.method !== "POST") {
     return res.status(405).send({
@@ -52,12 +88,17 @@ module.exports = async (req, res) => {
       fingerprintId,
       timestamp,
       deviceId,
-    } = req.body;
+    } = req.body || {};
 
-    // Validate request body
+    // --------------------------------------------------------
+    // VALIDATE REQUEST
+    //
+    // timestamp is accepted for compatibility with the Wemos,
+    // but the backend will NOT trust it.
+    // --------------------------------------------------------
+
     if (
       fingerprintId === undefined ||
-      !timestamp ||
       !deviceId
     ) {
       return res.status(400).send({
@@ -66,17 +107,15 @@ module.exports = async (req, res) => {
     }
 
     /*
-     * --------------------------------------------------
+     * --------------------------------------------------------
      * AUTHENTICATION
-     *
-     * Two supported methods:
      *
      * 1. Lecturer/browser:
      *    Authorization: Bearer <Firebase ID token>
      *
      * 2. Wemos:
      *    X-Device-Secret: <device secret>
-     * --------------------------------------------------
+     * --------------------------------------------------------
      */
 
     const authHeader =
@@ -88,15 +127,17 @@ module.exports = async (req, res) => {
     let authenticationMethod = null;
     let callerUid = null;
 
-    // -----------------------------------------------
-    // METHOD 1: Firebase ID TOKEN
-    // -----------------------------------------------
+    // --------------------------------------------------------
+    // FIREBASE AUTH
+    // --------------------------------------------------------
 
     if (authHeader.startsWith("Bearer ")) {
       const idToken = authHeader.substring(7);
 
       try {
-        const decoded = await getAuth().verifyIdToken(idToken);
+        const decoded = await getAuth().verifyIdToken(
+          idToken
+        );
 
         callerUid = decoded.uid;
         authenticationMethod = "firebase";
@@ -107,17 +148,17 @@ module.exports = async (req, res) => {
       }
     }
 
-    // -----------------------------------------------
-    // METHOD 2: DEVICE SECRET
-    // -----------------------------------------------
+    // --------------------------------------------------------
+    // DEVICE AUTH
+    // --------------------------------------------------------
 
     else if (deviceSecret) {
       authenticationMethod = "device";
     }
 
-    // -----------------------------------------------
-    // NO AUTHENTICATION
-    // -----------------------------------------------
+    // --------------------------------------------------------
+    // NO AUTH
+    // --------------------------------------------------------
 
     else {
       return res.status(401).send({
@@ -125,9 +166,9 @@ module.exports = async (req, res) => {
       });
     }
 
-    // -----------------------------------------------
+    // --------------------------------------------------------
     // GET DEVICE
-    // -----------------------------------------------
+    // --------------------------------------------------------
 
     const deviceRef = db
       .collection("devices")
@@ -143,9 +184,9 @@ module.exports = async (req, res) => {
 
     const deviceData = deviceSnap.data();
 
-    // -----------------------------------------------
-    // VERIFY DEVICE AUTHENTICATION
-    // -----------------------------------------------
+    // --------------------------------------------------------
+    // VERIFY DEVICE AUTH
+    // --------------------------------------------------------
 
     if (authenticationMethod === "firebase") {
       if (deviceData.authUid !== callerUid) {
@@ -175,9 +216,9 @@ module.exports = async (req, res) => {
       }
     }
 
-    // -----------------------------------------------
+    // --------------------------------------------------------
     // CHECK DEVICE SESSION
-    // -----------------------------------------------
+    // --------------------------------------------------------
 
     if (
       deviceData.status !== "active" ||
@@ -191,9 +232,9 @@ module.exports = async (req, res) => {
     const sessionId =
       deviceData.currentSessionId;
 
-    // -----------------------------------------------
-    // FIND STUDENT USING DEVICE + FINGERPRINT ID
-    // -----------------------------------------------
+    // --------------------------------------------------------
+    // FIND STUDENT
+    // --------------------------------------------------------
 
     const studentDocId =
       `${deviceId}_${fingerprintId}`;
@@ -214,9 +255,9 @@ module.exports = async (req, res) => {
 
     const regNo = studentData.regNo;
 
-    // -----------------------------------------------
+    // --------------------------------------------------------
     // GET SESSION
-    // -----------------------------------------------
+    // --------------------------------------------------------
 
     const sessionRef = db
       .collection("sessions")
@@ -232,9 +273,9 @@ module.exports = async (req, res) => {
 
     const sessionData = sessionSnap.data();
 
-    // -----------------------------------------------
+    // --------------------------------------------------------
     // CHECK SESSION STATUS
-    // -----------------------------------------------
+    // --------------------------------------------------------
 
     if (sessionData.status !== "active") {
       return res.status(400).send({
@@ -242,15 +283,30 @@ module.exports = async (req, res) => {
       });
     }
 
-    // -----------------------------------------------
-    // CHECK SCAN TIME
-    // -----------------------------------------------
+    // --------------------------------------------------------
+    // USE SERVER TIME
+    //
+    // IMPORTANT:
+    // We deliberately do NOT use the timestamp sent by
+    // the Wemos. Vercel/server time is authoritative.
+    // --------------------------------------------------------
 
-    const scanTime = new Date(timestamp);
+    const scanTime = new Date();
 
-    if (isNaN(scanTime.getTime())) {
-      return res.status(400).send({
-        error: "Invalid timestamp",
+    // Keep this variable read so the Wemos can continue
+    // sending its timestamp without causing an error.
+    void timestamp;
+
+    // --------------------------------------------------------
+    // GET SESSION TIME WINDOW
+    // --------------------------------------------------------
+
+    if (
+      !sessionData.startTime ||
+      !sessionData.endTime
+    ) {
+      return res.status(500).send({
+        error: "Session time window is not configured",
       });
     }
 
@@ -259,6 +315,10 @@ module.exports = async (req, res) => {
 
     const endTime =
       sessionData.endTime.toDate();
+
+    // --------------------------------------------------------
+    // CHECK SERVER TIME AGAINST SESSION
+    // --------------------------------------------------------
 
     if (
       scanTime < startTime ||
@@ -269,9 +329,9 @@ module.exports = async (req, res) => {
       });
     }
 
-    // -----------------------------------------------
+    // --------------------------------------------------------
     // RECORD ATTENDANCE
-    // -----------------------------------------------
+    // --------------------------------------------------------
 
     await sessionRef.update({
       [`attendees.${regNo}`]: {
@@ -279,9 +339,9 @@ module.exports = async (req, res) => {
       },
     });
 
-    // -----------------------------------------------
+    // --------------------------------------------------------
     // SUCCESS
-    // -----------------------------------------------
+    // --------------------------------------------------------
 
     return res.status(200).send({
       success: true,
@@ -289,6 +349,7 @@ module.exports = async (req, res) => {
       fingerprintId: Number(fingerprintId),
       deviceId,
       sessionId,
+      timestamp: scanTime.toISOString(),
       message: "Attendance recorded successfully",
     });
 
