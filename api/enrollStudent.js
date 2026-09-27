@@ -95,7 +95,7 @@ module.exports = async (req, res) => {
         error: "Invalid level",
       });
     }
-
+const normalizedLevel = `${parsedLevel}L`;
     // -----------------------------
     // Find device
     // -----------------------------
@@ -173,7 +173,7 @@ module.exports = async (req, res) => {
       regNo: String(regNo).trim(),
       fullName: String(fullName).trim(),
       department: String(department).trim(),
-      level: parsedLevel,
+      level: normalizedLevel,
       deviceId: deviceId,
       fingerprintId: parsedFingerprintId,
       attendanceStats: {},
