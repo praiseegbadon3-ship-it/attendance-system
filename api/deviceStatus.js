@@ -16,7 +16,10 @@ module.exports = async (req, res) => {
   // CORS
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, X-Device-Secret");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, X-Device-Secret"
+  );
 
   if (req.method === "OPTIONS") {
     return res.status(200).end();
@@ -75,6 +78,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         success: true,
         active: false,
+        attendanceReady: false,
         sessionId: null,
         startTime: null,
         endTime: null,
@@ -93,6 +97,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         success: true,
         active: false,
+        attendanceReady: false,
         sessionId: null,
         startTime: null,
         endTime: null,
@@ -107,6 +112,7 @@ module.exports = async (req, res) => {
       return res.status(200).json({
         success: true,
         active: false,
+        attendanceReady: false,
         sessionId: null,
         startTime: session.startTime || null,
         endTime: session.endTime || null,
@@ -114,15 +120,33 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Active session
+    // ------------------------------------------------------------
+    // SERVER-TIME ATTENDANCE READINESS
+    // ------------------------------------------------------------
+
+    const now = new Date();
+
+    let attendanceReady = false;
+
+    if (session.startTime && typeof session.startTime.toDate === "function") {
+      const startTime = session.startTime.toDate();
+
+      attendanceReady = now >= startTime;
+    }
+
+    // Active session, but attendance may still be waiting
     return res.status(200).json({
       success: true,
       active: true,
+      attendanceReady: attendanceReady,
       sessionId: device.currentSessionId,
       courseId: session.courseId || null,
       startTime: session.startTime || null,
       endTime: session.endTime || null,
-      message: "Session is active",
+      serverTime: now.toISOString(),
+      message: attendanceReady
+        ? "Attendance is ready"
+        : "Session authorized, waiting for start time",
     });
 
   } catch (error) {
