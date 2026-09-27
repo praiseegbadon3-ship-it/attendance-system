@@ -122,10 +122,26 @@ module.exports = async (req, res) => {
       if (attendanceData && attendanceData.timestamp) {
         const value = attendanceData.timestamp;
 
+        let dateValue = null;
+
         if (value && typeof value.toDate === "function") {
-          timestamp = value.toDate().toLocaleString();
+          dateValue = value.toDate();
         } else if (value) {
-          timestamp = new Date(value).toLocaleString();
+          dateValue = new Date(value);
+        }
+
+        if (dateValue && !isNaN(dateValue.getTime())) {
+          // Convert UTC timestamp to Nigeria local time (WAT)
+          timestamp = new Intl.DateTimeFormat("en-NG", {
+            timeZone: "Africa/Lagos",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: true,
+          }).format(dateValue);
         }
       }
 
