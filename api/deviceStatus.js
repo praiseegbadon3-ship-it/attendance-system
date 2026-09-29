@@ -73,7 +73,23 @@ module.exports = async (req, res) => {
       });
     }
 
-    // No active session
+    // ------------------------------------------------------------
+    // DEVICE HEARTBEAT
+    // ------------------------------------------------------------
+    // The Wemos reaches this endpoint repeatedly.
+    // A successful authenticated request means the physical device
+    // is currently communicating with the backend.
+
+    const now = new Date();
+
+    await deviceRef.update({
+      lastSeen: admin.firestore.Timestamp.fromDate(now),
+    });
+
+    // ------------------------------------------------------------
+    // NO ACTIVE SESSION
+    // ------------------------------------------------------------
+
     if (!device.currentSessionId || device.status !== "active") {
       return res.status(200).json({
         success: true,
@@ -82,6 +98,8 @@ module.exports = async (req, res) => {
         sessionId: null,
         startTime: null,
         endTime: null,
+        serverTime: now.toISOString(),
+        lastSeen: now.toISOString(),
         message: "No active session",
       });
     }
@@ -101,6 +119,8 @@ module.exports = async (req, res) => {
         sessionId: null,
         startTime: null,
         endTime: null,
+        serverTime: now.toISOString(),
+        lastSeen: now.toISOString(),
         message: "Session not found",
       });
     }
@@ -116,6 +136,8 @@ module.exports = async (req, res) => {
         sessionId: null,
         startTime: session.startTime || null,
         endTime: session.endTime || null,
+        serverTime: now.toISOString(),
+        lastSeen: now.toISOString(),
         message: "Session is not active",
       });
     }
@@ -124,17 +146,21 @@ module.exports = async (req, res) => {
     // SERVER-TIME ATTENDANCE READINESS
     // ------------------------------------------------------------
 
-    const now = new Date();
-
     let attendanceReady = false;
 
-    if (session.startTime && typeof session.startTime.toDate === "function") {
+    if (
+      session.startTime &&
+      typeof session.startTime.toDate === "function"
+    ) {
       const startTime = session.startTime.toDate();
 
       attendanceReady = now >= startTime;
     }
 
-    // Active session, but attendance may still be waiting
+    // ------------------------------------------------------------
+    // ACTIVE SESSION
+    // ------------------------------------------------------------
+
     return res.status(200).json({
       success: true,
       active: true,
@@ -144,11 +170,11 @@ module.exports = async (req, res) => {
       startTime: session.startTime || null,
       endTime: session.endTime || null,
       serverTime: now.toISOString(),
+      lastSeen: now.toISOString(),
       message: attendanceReady
         ? "Attendance is ready"
         : "Session authorized, waiting for start time",
     });
-
   } catch (error) {
     console.error("deviceStatus error:", error);
 
